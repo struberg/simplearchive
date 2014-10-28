@@ -1,0 +1,11 @@
+.idea
+.project
+.settings
+.classpath
+*.iwr
+*.ipr
+*.iml
+target
+*.log
+*.patch
+*.diff
