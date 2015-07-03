@@ -28,6 +28,9 @@ import org.apacheextras.simplearchive.impl.SimpleArchiveStorage;
  * Thus it is possible to even use it in parallel maven builds
  * and still share the same location.
  *
+ * Please note that the methods are still synchronized as nio file locks
+ * only work on different JVMs.
+ *
  * @author <a href="mailto:struberg@yahoo.de">Mark Struberg</a>
  */
 public class SimpleArchive
@@ -40,23 +43,9 @@ public class SimpleArchive
      */
     public SimpleArchive(String storageLocation)
     {
-        this.sas = new SimpleArchiveStorage(storageLocation);
-
-    }
-
-    public void addDocument(String documentId, byte[] document, Map<String, String> documentMetadata)
-    {
         try
         {
-            try
-            {
-                sas.open();
-                sas.writeDocument(documentId, document, documentMetadata);
-            }
-            finally
-            {
-                sas.close();
-            }
+            this.sas = new SimpleArchiveStorage(storageLocation);
         }
         catch (Exception e)
         {
@@ -64,23 +53,51 @@ public class SimpleArchive
         }
     }
 
-    public void setMetdata(String documentId, Map<String, String> documentMetadata)
+    public synchronized void addDocument(String documentId, byte[] document, Map<String, String> documentMetadata)
     {
         try
         {
-            try
-            {
-                sas.open();
-                sas.writeDocument(documentId, null, documentMetadata);
-            }
-            finally
-            {
-                sas.close();
-            }
+            sas.open();
+            sas.writeDocument(documentId, document, documentMetadata);
         }
         catch (Exception e)
         {
             throw new RuntimeException(e);
+        }
+        finally
+        {
+            try
+            {
+                sas.close();
+            }
+            catch (IOException e)
+            {
+                // bad luck...
+            }
+        }
+    }
+
+    public synchronized void setMetdata(String documentId, Map<String, String> documentMetadata)
+    {
+        try
+        {
+            sas.open();
+            sas.writeDocument(documentId, null, documentMetadata);
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
+        finally
+        {
+            try
+            {
+                sas.close();
+            }
+            catch (IOException e)
+            {
+                // bad luck...
+            }
         }
     }
 
@@ -91,84 +108,100 @@ public class SimpleArchive
      * @param requiredAttributes
      * @return the documentIds of the found documents
      */
-    public String[] searchDocuments(Map<String, String> requiredAttributes)
+    public synchronized String[] searchDocuments(Map<String, String> requiredAttributes)
     {
         try
         {
-            try
-            {
-                sas.open();
-                List<String> documentIds = sas.searchDocuments(requiredAttributes);
-                return documentIds.toArray(new String[documentIds.size()]);
-            }
-            finally
-            {
-                sas.close();
-            }
+            sas.open();
+            List<String> documentIds = sas.searchDocuments(requiredAttributes);
+            return documentIds.toArray(new String[documentIds.size()]);
         }
         catch (Exception e)
         {
             throw new RuntimeException(e);
+        }
+        finally
+        {
+            try
+            {
+                sas.close();
+            }
+            catch (IOException e)
+            {
+                // bad luck...
+            }
         }
     }
 
-    public Map<String, String> readMetadata(String documentId)
+    public synchronized Map<String, String> readMetadata(String documentId)
     {
         try
         {
-            try
-            {
-                sas.open();
-                return sas.readMetadata(documentId);
-            }
-            finally
-            {
-                sas.close();
-            }
+            sas.open();
+            return sas.readMetadata(documentId);
         }
         catch (Exception e)
         {
             throw new RuntimeException(e);
+        }
+        finally
+        {
+            try
+            {
+                sas.close();
+            }
+            catch (IOException e)
+            {
+                // bad luck...
+            }
         }
     }
 
-    public byte[] readDocument(String documentId)
+    public synchronized byte[] readDocument(String documentId)
     {
         try
         {
-            try
-            {
-                sas.open();
-                return sas.readDocument(documentId);
-            }
-            finally
-            {
-                sas.close();
-            }
+            sas.open();
+            return sas.readDocument(documentId);
         }
         catch (Exception e)
         {
             throw new RuntimeException(e);
+        }
+        finally
+        {
+            try
+            {
+                sas.close();
+            }
+            catch (IOException e)
+            {
+                // bad luck...
+            }
         }
     }
 
-    public void deleteDocument(String documentId)
+    public synchronized void deleteDocument(String documentId)
     {
         try
         {
-            try
-            {
-                sas.open();
-                sas.deleteDocument(documentId);
-            }
-            finally
-            {
-                sas.close();
-            }
+            sas.open();
+            sas.deleteDocument(documentId);
         }
         catch (Exception e)
         {
             throw new RuntimeException(e);
+        }
+        finally
+        {
+            try
+            {
+                sas.close();
+            }
+            catch (IOException e)
+            {
+                // bad luck...
+            }
         }
     }
 

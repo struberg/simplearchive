@@ -17,54 +17,19 @@
 package org.apacheextras.simplearchive.test;
 
 import java.io.IOException;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.apacheextras.simplearchive.impl.SimpleArchiveStorage;
 import org.testng.Assert;
-import org.testng.annotations.AfterClass;
-import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
 /**
  * @author <a href="mailto:struberg@yahoo.de">Mark Struberg</a>
  */
-public class TestSimpleArchiveStorage
+public class SimpleArchiveStorageTest extends ArchiveTestBase
 {
-    private Path tempDir;
-
-    @BeforeClass
-    public void createTempDir() throws IOException
-    {
-        tempDir = Files.createTempDirectory("simpleArchive");
-    }
-
-    @AfterClass
-    public void deleteTempDir() throws IOException
-    {
-        Files.walkFileTree(tempDir, new SimpleFileVisitor<Path>()
-        {
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException
-            {
-                Files.delete(file);
-                return FileVisitResult.CONTINUE;
-            }
-
-            @Override
-            public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException
-            {
-                Files.delete(dir);
-                return FileVisitResult.CONTINUE;
-            }
-        });
-    }
 
     @Test
     public void testSimpleArchiveWriteDocument() throws IOException, InterruptedException

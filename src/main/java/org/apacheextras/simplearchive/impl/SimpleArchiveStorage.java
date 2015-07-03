@@ -16,8 +16,12 @@
  */
 package org.apacheextras.simplearchive.impl;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileLock;
@@ -72,10 +76,16 @@ public class SimpleArchiveStorage
     private boolean opened = false;
     private RandomAccessFile metadataAccess;
     private FileLock metadataLock;
+    private final File metadata;
 
-    public SimpleArchiveStorage(String storageLocation)
+    public SimpleArchiveStorage(String storageLocation) throws IOException
     {
         this.storageLocation = storageLocation;
+        this.metadata = new File(storageLocation, METADATA_FILE_NAME);
+        if (!metadata.exists())
+        {
+            metadata.createNewFile();
+        }
 
         File storage = new File(storageLocation);
         if (!storage.exists())
@@ -146,9 +156,9 @@ public class SimpleArchiveStorage
         }
 
         if (documentMetadata != null) {
-            List<String> content = readAllLines(metadataAccess);
+            List<String> content = readAllLines();
             content = setMetadata(content, documentId, documentMetadata);
-            writeAllLines(metadataAccess, content);
+            writeAllLines(content);
         }
     }
 
@@ -159,7 +169,7 @@ public class SimpleArchiveStorage
         // docid -> found criterias
         Map<String, Set<String>> matchDocs = new HashMap<String, Set<String>>();
 
-        List<String> lines = readAllLines(metadataAccess);
+        List<String> lines = readAllLines();
         for (String line : lines)
         {
             String[] parts = line.split("\\#\\#");
@@ -207,6 +217,10 @@ public class SimpleArchiveStorage
     public byte[] readDocument(String documentId) throws IOException
     {
         File documentFile = new File(storageLocation, documentId + DOCUMENT_FILE_EXTENSION);
+        if (!documentFile.exists())
+        {
+            return null;
+        }
         Path path = Paths.get(documentFile.toURI());
         return Files.readAllBytes(path);
     }
@@ -215,7 +229,7 @@ public class SimpleArchiveStorage
     public Map<String, String> readMetadata(String documentId) throws IOException
     {
         Map<String, String> metadata = new HashMap<String, String>();
-        List<String> content = readAllLines(metadataAccess);
+        List<String> content = readAllLines();
         final String metadataStart = escape(documentId) + METADATA_SEPARATOR;
         Iterator<String> contentIt = content.iterator();
         while (contentIt.hasNext())
@@ -240,9 +254,9 @@ public class SimpleArchiveStorage
         File documentFile = new File(storageLocation, documentId + DOCUMENT_FILE_EXTENSION);
         documentFile.delete();
 
-        List<String> content = readAllLines(metadataAccess);
+        List<String> content = readAllLines();
         content = removeMetadata(content, documentId);
-        writeAllLines(metadataAccess, content);
+        writeAllLines(content);
     }
 
 
@@ -250,9 +264,7 @@ public class SimpleArchiveStorage
     {
         if (metadataAccess == null)
         {
-            File metadataFile = new File(storageLocation, METADATA_FILE_NAME);
-            metadataFile.createNewFile();
-            metadataAccess = new RandomAccessFile(metadataFile, "rw");
+            metadataAccess = new RandomAccessFile(metadata, "rw");
         }
 
         return metadataAccess;
@@ -263,30 +275,38 @@ public class SimpleArchiveStorage
      * This implementation is NOT tuned for performance as you see ;)
      * @return all the content of the file
      */
-    private List<String> readAllLines(RandomAccessFile file) throws IOException
+    private List<String> readAllLines() throws IOException
     {
         List<String> content = new ArrayList<String>();
-        file.seek(0);
 
-        String line;
-        while ((line = file.readLine()) != null)
+        // new BufferedReader with 256kB block size
+        try (BufferedReader br = new BufferedReader(new FileReader(metadata), 2^18))
         {
-            if (line.trim().length() > 0)
+            String line;
+            while ((line = br.readLine()) != null)
             {
-                content.add(line);
+                if (line.trim().length() > 0)
+                {
+                    content.add(line);
+                }
             }
+            br.close();
         }
 
         return content;
     }
 
-    private void writeAllLines(RandomAccessFile file, List<String> content) throws IOException
+    private void writeAllLines(List<String> content) throws IOException
     {
-        file.seek(0);
-        for (String line : content)
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(metadata, false), 2^18))
         {
-            file.writeBytes(line);
-            file.write('\n');
+            for (String line : content)
+            {
+                bw.write(line);
+                bw.newLine();
+            }
+            bw.flush();
+            bw.close();
         }
     }
 
