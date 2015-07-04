@@ -16,7 +16,6 @@
  */
 package org.apacheextras.simplearchive;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
@@ -66,14 +65,7 @@ public class SimpleArchive
         }
         finally
         {
-            try
-            {
-                sas.close();
-            }
-            catch (IOException e)
-            {
-                // bad luck...
-            }
+            sas.close();
         }
     }
 
@@ -90,14 +82,7 @@ public class SimpleArchive
         }
         finally
         {
-            try
-            {
-                sas.close();
-            }
-            catch (IOException e)
-            {
-                // bad luck...
-            }
+            sas.close();
         }
     }
 
@@ -122,14 +107,7 @@ public class SimpleArchive
         }
         finally
         {
-            try
-            {
-                sas.close();
-            }
-            catch (IOException e)
-            {
-                // bad luck...
-            }
+            sas.close();
         }
     }
 
@@ -146,14 +124,7 @@ public class SimpleArchive
         }
         finally
         {
-            try
-            {
-                sas.close();
-            }
-            catch (IOException e)
-            {
-                // bad luck...
-            }
+            sas.close();
         }
     }
 
@@ -170,14 +141,7 @@ public class SimpleArchive
         }
         finally
         {
-            try
-            {
-                sas.close();
-            }
-            catch (IOException e)
-            {
-                // bad luck...
-            }
+            sas.close();
         }
     }
 
@@ -194,14 +158,7 @@ public class SimpleArchive
         }
         finally
         {
-            try
-            {
-                sas.close();
-            }
-            catch (IOException e)
-            {
-                // bad luck...
-            }
+            sas.close();
         }
     }
 

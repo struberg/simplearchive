@@ -27,7 +27,7 @@ import org.testng.annotations.Test;
  * @author <a href="mailto:struberg@yahoo.de">Mark Struberg</a>
  */
 public class SimpleArchiveTest extends ArchiveTestBase {
-    public final int NUM_DOCS = 200;
+    public final int NUM_DOCS = 1000;
 
     @Test
     public void textSimpleArchivePerformance() {

@@ -16,12 +16,8 @@
  */
 package org.apacheextras.simplearchive.impl;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileLock;
@@ -35,6 +31,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Access the metadata and the archive storage.
@@ -43,7 +40,9 @@ import java.util.Set;
  *
  * This class is NOT synchronized!
  *
- * <h3>The format of the metadata file looks as following. '##' is used as separator.</h3>
+ * <h3>The format of the metadata file looks as following.
+ * The first line contains a 'version' number which gets incremented with every write.
+ * For content the '##' token is used as separator.</h3>
  * <pre>
  * {documentId}##documentId##{filename}
  * {documentId}##{attributeName}###{attributeValue}
@@ -51,6 +50,7 @@ import java.util.Set;
  *
  * An example would be:
  * <pre>
+ * 1438
  * zep00033320012##documentId##zep00033320012.pdf
  * zep00033320012##name##sales_contract
  * zep00033320012##assignedTo##karl@somecompany.sample
@@ -76,22 +76,29 @@ public class SimpleArchiveStorage
     private boolean opened = false;
     private RandomAccessFile metadataAccess;
     private FileLock metadataLock;
-    private final File metadata;
 
-    public SimpleArchiveStorage(String storageLocation) throws IOException
+    /**
+     * We now simply cache the full metadata attributes;
+     * Note that this might get big! Well, it's only a SIMPLE archive intended for testing only ;)
+     */
+    private List<String> contentLines = new ArrayList<>();
+
+    /**
+     * We also implement optimistic locking.
+     * Means the {@link #contentLines} only will get refreshed when the version in the file
+     * got changed by another thread/JVM.
+     */
+    private AtomicInteger optLock = new AtomicInteger(0);
+
+
+    public SimpleArchiveStorage(String storageLocation)
     {
         this.storageLocation = storageLocation;
-        this.metadata = new File(storageLocation, METADATA_FILE_NAME);
-        if (!metadata.exists())
-        {
-            metadata.createNewFile();
-        }
 
-        File storage = new File(storageLocation);
-        if (!storage.exists())
-        {
-            storage.mkdirs();
-        }
+            File storage = new File(storageLocation);
+            if (!storage.exists()) {
+                storage.mkdirs();
+            }
     }
 
     public void open() throws InterruptedException, IOException
@@ -107,18 +114,24 @@ public class SimpleArchiveStorage
     }
 
 
-    public void close() throws IOException
+    public void close()
     {
         if (!opened)
         {
             return;
         }
 
-        metadataLock.close();
-        metadataAccess.close();
-        metadataLock = null;
-        metadataAccess = null;
-        opened = false;
+        try {
+            metadataLock.close();
+            metadataAccess.close();
+            metadataLock = null;
+            metadataAccess = null;
+            opened = false;
+        }
+        catch (IOException ioe)
+        {
+            throw new RuntimeException(ioe);
+        }
     }
 
     public boolean isOpen()
@@ -156,9 +169,9 @@ public class SimpleArchiveStorage
         }
 
         if (documentMetadata != null) {
-            List<String> content = readAllLines();
+            List<String> content = readAllLines(metadataAccess);
             content = setMetadata(content, documentId, documentMetadata);
-            writeAllLines(content);
+            writeAllLines(metadataAccess, content);
         }
     }
 
@@ -169,7 +182,7 @@ public class SimpleArchiveStorage
         // docid -> found criterias
         Map<String, Set<String>> matchDocs = new HashMap<String, Set<String>>();
 
-        List<String> lines = readAllLines();
+        List<String> lines = readAllLines(metadataAccess);
         for (String line : lines)
         {
             String[] parts = line.split("\\#\\#");
@@ -228,8 +241,8 @@ public class SimpleArchiveStorage
 
     public Map<String, String> readMetadata(String documentId) throws IOException
     {
-        Map<String, String> metadata = new HashMap<String, String>();
-        List<String> content = readAllLines();
+        Map<String, String> metadata = new HashMap<>();
+        List<String> content = readAllLines(metadataAccess);
         final String metadataStart = escape(documentId) + METADATA_SEPARATOR;
         Iterator<String> contentIt = content.iterator();
         while (contentIt.hasNext())
@@ -254,9 +267,9 @@ public class SimpleArchiveStorage
         File documentFile = new File(storageLocation, documentId + DOCUMENT_FILE_EXTENSION);
         documentFile.delete();
 
-        List<String> content = readAllLines();
+        List<String> content = readAllLines(metadataAccess);
         content = removeMetadata(content, documentId);
-        writeAllLines(content);
+        writeAllLines(metadataAccess, content);
     }
 
 
@@ -264,7 +277,9 @@ public class SimpleArchiveStorage
     {
         if (metadataAccess == null)
         {
-            metadataAccess = new RandomAccessFile(metadata, "rw");
+            File metadataFile = new File(storageLocation, METADATA_FILE_NAME);
+            metadataFile.createNewFile();
+            metadataAccess = new RandomAccessFile(metadataFile, "rw");
         }
 
         return metadataAccess;
@@ -275,39 +290,68 @@ public class SimpleArchiveStorage
      * This implementation is NOT tuned for performance as you see ;)
      * @return all the content of the file
      */
-    private List<String> readAllLines() throws IOException
+    private List<String> readAllLines(RandomAccessFile file) throws IOException
     {
         List<String> content = new ArrayList<String>();
+        file.seek(0);
 
-        // new BufferedReader with 256kB block size
-        try (BufferedReader br = new BufferedReader(new FileReader(metadata), 2^18))
+        String line;
+
+        // first line is the version
+        line = file.readLine();
+        if (line == null || line.length() == 0)
         {
-            String line;
-            while ((line = br.readLine()) != null)
-            {
-                if (line.trim().length() > 0)
-                {
-                    content.add(line);
-                }
+            // an empty archive
+            optLock.set(0);
+            return content;
+        }
+        else if (line.contains("##"))
+        {
+            // old archive file, implicitly convert it
+            content.add(line);
+            optLock.set(0);
+        }
+        else {
+            int version = Integer.parseInt(line);
+            if (optLock.get() == version) {
+                // file did not get changed in the meantime -> fine with the current content
+                return contentLines;
             }
-            br.close();
+        }
+
+        while ((line = file.readLine()) != null)
+        {
+            if (line.trim().length() > 0)
+            {
+                content.add(line);
+            }
         }
 
         return content;
     }
 
-    private void writeAllLines(List<String> content) throws IOException
+    private void writeAllLines(RandomAccessFile file, List<String> content) throws IOException
     {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(metadata, false), 2^18))
+        // we give a damn about memory and write all at once - remember it's a SIMPLE archive...
+        StringBuffer sb = new StringBuffer(2^18);
+
+        for (String line : content)
         {
-            for (String line : content)
-            {
-                bw.write(line);
-                bw.newLine();
-            }
-            bw.flush();
-            bw.close();
+            sb.append(line).append('\n');
         }
+
+        file.seek(0);
+
+        // handle optimistic locking
+        int newVersion = optLock.incrementAndGet();
+        file.writeBytes(Integer.toString(newVersion));
+        file.write('\n');
+
+        // and update the cached content
+        contentLines = content;
+
+        // and now write the content all in one go
+        file.writeBytes(sb.toString());
     }
 
     private List<String> setMetadata(List<String> content, String documentId, Map<String, String> documentMetadata)
